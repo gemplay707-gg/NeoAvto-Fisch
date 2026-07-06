@@ -1,7 +1,7 @@
 """
 vision.py
 Захват участков экрана и распознавание текста (OCR) через встроенный Tesseract.
-Теперь бот портативный и не требует установки Tesseract в систему!
+Полностью портативная версия: сама находит Tesseract и файлы языков 'tessdata'.
 """
 
 import os
@@ -12,17 +12,22 @@ import cv2
 import pytesseract
 from PIL import Image
 
-# Автоматически определяем путь к папке приложения (работает и для .py, и для .exe)
+# Автоматически определяем путь к папке нашего приложения
 if getattr(sys, 'frozen', False):
-    # Если запущен скомпилированный .exe
     BASE_DIR = os.path.dirname(sys.executable)
 else:
-    # Если запущен обычный .py файл
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Указываем путь к Tesseract прямо внутри папки нашего проекта
-TESSERACT_PATH = os.path.join(BASE_DIR, "Tesseract-OCR", "tesseract.exe")
+# Путь к самой папке Tesseract-OCR внутри нашего проекта
+TESSERACT_DIR = os.path.join(BASE_DIR, "Tesseract-OCR")
+TESSERACT_PATH = os.path.join(TESSERACT_DIR, "tesseract.exe")
+
+# Принудительно настраиваем пути для pytesseract
 pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
+
+# Указываем Tesseract, где конкретно искать папку 'tessdata' с языками,
+# чтобы не было ошибки "Failed loading language 'eng'"
+os.environ["TESSDATA_PREFIX"] = TESSERACT_DIR
 
 
 def grab(region: dict) -> Image.Image:
@@ -46,11 +51,20 @@ def _preprocess(img: Image.Image, scale: int = 2) -> Image.Image:
 
 def ocr_text(img: Image.Image, preprocess: bool = True) -> str:
     """Возвращает весь распознанный текст региона в виде строки."""
+    if not os.path.exists(TESSERACT_PATH):
+        return f"Ошибка: не найден tesseract.exe по пути: {TESSERACT_PATH}"
+    
     try:
         proc = _preprocess(img) if preprocess else img
         return pytesseract.image_to_string(proc, lang="eng")
     except Exception as e:
-        return f"Ошибка OCR: {str(e)}\nПроверьте наличие папки Tesseract-OCR рядом с ботом!"
+        # Если Tesseract выдал ошибку в бинарном формате Windows-1251, декодируем её вручную
+        if hasattr(e, 'output') and isinstance(e.output, bytes):
+            try:
+                return f"Ошибка Tesseract: {e.output.decode('cp1251')}"
+            except Exception:
+                pass
+        return f"Ошибка OCR: {str(e)}"
 
 
 def ocr_data(img: Image.Image, preprocess: bool = True, scale: int = 2):
@@ -67,9 +81,18 @@ def ocr_data(img: Image.Image, preprocess: bool = True, scale: int = 2):
 
 def find_text_position(region: dict, keywords):
     """Ищет в указанном регионе экрана строку, содержащую ключевые слова."""
-    img = grab(region)
-    data, used_scale = ocr_data(img)
-    n = len(data["text"])
+    try:
+        img = grab(region)
+        data, used_scale = ocr_data(img)
+        n = len(data["text"])
+    except Exception as e:
+        # Перехватываем ошибки запуска Tesseract во время поиска кнопок кликов
+        if hasattr(e, 'output') and isinstance(e.output, bytes):
+            try:
+                raise RuntimeError(e.output.decode('cp1251'))
+            except Exception:
+                pass
+        raise e
 
     lines = {}
     for i in range(n):

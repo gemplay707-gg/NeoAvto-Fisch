@@ -8,10 +8,12 @@ import tkinter as tk
 
 
 class RegionSelector:
-    def __init__(self, title="Выделите область"):
+    def __init__(self, parent, title="Выделите область"):
         self.result = None
+        self.parent = parent
 
-        self.root = tk.Tk()
+        # Используем Toplevel вместо tk.Tk(), привязывая его к главному окну
+        self.root = tk.Toplevel(parent)
         self.root.attributes("-fullscreen", True)
         self.root.attributes("-alpha", 0.30)
         self.root.attributes("-topmost", True)
@@ -59,9 +61,13 @@ class RegionSelector:
         self.root.destroy()
 
     def run(self):
-        self.root.mainloop()
+        # Делаем окно калибровки активным и перехватываем фокус
+        self.root.focus_set()
+        self.root.grab_set()
+        # Корректно ждем, пока пользователь выделит область или нажмет Esc
+        self.parent.wait_window(self.root)
         return self.result
 
 
-def select_region(title="Выделите область"):
-    return RegionSelector(title).run()
+def select_region(parent, title="Выделите область"):
+    return RegionSelector(parent, title).run()

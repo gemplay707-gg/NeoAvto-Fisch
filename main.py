@@ -118,7 +118,8 @@ class App:
         self.root.after(400, lambda: self._do_calibrate(key, title))
 
     def _do_calibrate(self, key, title):
-        region = select_region(title)
+        # Передаем self.root в качестве родительского окна
+        region = select_region(self.root, title)
         self.root.deiconify()
         if region:
             self.regions[key] = region
@@ -152,15 +153,16 @@ class App:
         self.root.after(500, self._poll_bot)
 
     def stop_bot(self):
+        # Безопасно останавливаем только поток логики. 
+        # Кнопки обновятся автоматически в методе _poll_bot.
         if self.bot:
             self.bot.stop()
-        self.stop_btn.config(state="disabled")
-        self.start_btn.config(state="normal")
 
     def _poll_bot(self):
         if self.bot and self.bot.is_running():
             self.root.after(500, self._poll_bot)
         else:
+            # Сюда программа зайдет, если бот завершился сам ИЛИ был остановлен через stop_bot/F8
             self.start_btn.config(state="normal")
             self.stop_btn.config(state="disabled")
 

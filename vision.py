@@ -1,29 +1,32 @@
 """
 vision.py
-Захват участков экрана и распознавание текста (OCR) через Tesseract.
-
-ВАЖНО: для работы нужен установленный движок Tesseract-OCR (не только
-python-пакет pytesseract, а сам исполняемый файл). См. README.md.
-
-Если Tesseract не находится в PATH, раскомментируйте и укажите путь ниже:
-    pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+Захват участков экрана и распознавание текста (OCR) через встроенный Tesseract.
+Теперь бот портативный и не требует установки Tesseract в систему!
 """
 
+import os
+import sys
 import mss
 import numpy as np
 import cv2
 import pytesseract
 from PIL import Image
 
-# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# Автоматически определяем путь к папке приложения (работает и для .py, и для .exe)
+if getattr(sys, 'frozen', False):
+    # Если запущен скомпилированный .exe
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    # Если запущен обычный .py файл
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Указываем путь к Tesseract прямо внутри папки нашего проекта
+TESSERACT_PATH = os.path.join(BASE_DIR, "Tesseract-OCR", "tesseract.exe")
+pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
 
 
 def grab(region: dict) -> Image.Image:
-    """
-    Делает скриншот указанного региона экрана.
-    region: {"left": int, "top": int, "width": int, "height": int}
-    Возвращает PIL.Image в RGB.
-    """
+    """Делает скриншот указанного региона экрана."""
     with mss.mss() as sct:
         shot = sct.grab(region)
         img = np.array(shot)  # BGRA
@@ -32,8 +35,7 @@ def grab(region: dict) -> Image.Image:
 
 
 def _preprocess(img: Image.Image, scale: int = 2) -> Image.Image:
-    """Увеличивает и бинаризует изображение — заметно повышает точность OCR
-    на игровом UI с полупрозрачным текстом."""
+    """Увеличивает и бинаризует изображение — повышает точность OCR."""
     gray = img.convert("L")
     w, h = gray.size
     gray = gray.resize((w * scale, h * scale), Image.LANCZOS)
@@ -44,16 +46,15 @@ def _preprocess(img: Image.Image, scale: int = 2) -> Image.Image:
 
 def ocr_text(img: Image.Image, preprocess: bool = True) -> str:
     """Возвращает весь распознанный текст региона в виде строки."""
-    proc = _preprocess(img) if preprocess else img
-    return pytesseract.image_to_string(proc, lang="eng")
+    try:
+        proc = _preprocess(img) if preprocess else img
+        return pytesseract.image_to_string(proc, lang="eng")
+    except Exception as e:
+        return f"Ошибка OCR: {str(e)}\nПроверьте наличие папки Tesseract-OCR рядом с ботом!"
 
 
 def ocr_data(img: Image.Image, preprocess: bool = True, scale: int = 2):
-    """
-    Возвращает "сырые" данные OCR (слова + их координаты) вместе
-    с использованным коэффициентом масштабирования (нужен для пересчёта
-    координат обратно в координаты исходного скриншота).
-    """
+    """Возвращает 'сырые' данные OCR (слова + их координаты)."""
     if preprocess:
         proc = _preprocess(img, scale=scale)
         used_scale = scale
@@ -65,14 +66,7 @@ def ocr_data(img: Image.Image, preprocess: bool = True, scale: int = 2):
 
 
 def find_text_position(region: dict, keywords):
-    """
-    Ищет в указанном регионе экрана строку, содержащую любое из ключевых слов
-    (без учёта регистра). Строки группируются по (block, par, line) — так,
-    как их видит Tesseract.
-
-    Возвращает (abs_x, abs_y, line_text) — абсолютные координаты центра
-    найденной строки на экране (для клика) — или None, если не найдено.
-    """
+    """Ищет в указанном регионе экрана строку, содержащую ключевые слова."""
     img = grab(region)
     data, used_scale = ocr_data(img)
     n = len(data["text"])

@@ -1,0 +1,6 @@
+mss
+pillow
+opencv-python
+pytesseract
+pyautogui
+keyboard
